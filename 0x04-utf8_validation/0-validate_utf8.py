@@ -1,83 +1,59 @@
 #!/usr/bin/python3
-"""UTF-8 validation module."""
-
 
 def validUTF8(data):
-    """Checks if a list of integers represents valid UTF-8 encoded data.
-    
-    Args:
-        data: List of integers representing bytes (0-255)
-        
-    Returns:
-        True if data is valid UTF-8, False otherwise
-    """
-    n = len(data)
-    i = 0
-    while i < n:
-        # Validate current byte is within 0-255
-        if not isinstance(data[i], int) or data[i] < 0 or data[i] > 255:
-            return False
-        
-        byte = data[i]
-        
-        # Determine the number of bytes in the current UTF-8 character
-        if byte < 0x80:
-            # 1-byte character
-            i += 1
-            continue
-        elif (byte & 0xE0) == 0xC0:
-            # 2-byte character (must be >= 0xC2 to avoid overlong)
-            if byte < 0xC2:
+    remaining_continuations = 0
+    bytes_used = 0
+    code_point = 0
+
+    for num in data:
+        byte = num & 0xFF
+
+        if remaining_continuations == 0:
+            # Start of a new character
+            if (byte & 0x80) == 0x00:  # 1-byte character
+                code_point = byte & 0x7F
+                bytes_used = 1
+                remaining_continuations = 0
+            elif (byte & 0xE0) == 0xC0:  # 2-byte character
+                code_point = byte & 0x1F
+                bytes_used = 2
+                remaining_continuations = 1
+            elif (byte & 0xF0) == 0xE0:  # 3-byte character
+                code_point = byte & 0x0F
+                bytes_used = 3
+                remaining_continuations = 2
+            elif (byte & 0xF8) == 0xF0:  # 4-byte character
+                code_point = byte & 0x07
+                bytes_used = 4
+                remaining_continuations = 3
+            else:
+                # Invalid start byte
                 return False
-            num_bytes = 2
-        elif (byte & 0xF0) == 0xE0:
-            # 3-byte character
-            num_bytes = 3
-        elif (byte & 0xF8) == 0xF0:
-            # 4-byte character (must be <= 0xF4 for valid Unicode)
-            if byte > 0xF4:
-                return False
-            num_bytes = 4
+
+            if bytes_used == 1:
+                # 1-byte character is always valid
+                pass
         else:
-            # Invalid leading byte
-            return False
-        
-        # Check if there are enough bytes left
-        if i + num_bytes > n:
-            return False
-        
-        # Check continuation bytes
-        for j in range(1, num_bytes):
-            if (data[i + j] & 0xC0) != 0x80:
+            # Processing continuation byte
+            if (byte & 0xC0) != 0x80:
                 return False
-        
-        # Calculate code point and validate ranges
-        if num_bytes == 2:
-            code_point = ((byte & 0x1F) << 6) | (data[i + 1] & 0x3F)
-            if code_point < 0x80:
-                return False
-        elif num_bytes == 3:
-            code_point = ((byte & 0x0F) << 12) | ((data[i + 1] & 0x3F) << 6) | (data[i + 2] & 0x3F)
-            if code_point < 0x800:
-                return False
-            # Check for surrogates
-            if 0xD800 <= code_point <= 0xDFFF:
-                return False
-            # Check for specific 3-byte constraints
-            if byte == 0xE0 and (data[i + 1] & 0xFF) < 0xA0:
-                return False
-            if byte == 0xED and (data[i + 1] & 0xFF) > 0x9F:
-                return False
-        elif num_bytes == 4:
-            code_point = ((byte & 0x07) << 18) | ((data[i + 1] & 0x3F) << 12) | ((data[i + 2] & 0x3F) << 6) | (data[i + 3] & 0x3F)
-            if code_point < 0x10000 or code_point > 0x10FFFF:
-                return False
-            # Check specific 4-byte constraints
-            if byte == 0xF0 and (data[i + 1] & 0xFF) < 0x90:
-                return False
-            if byte == 0xF4 and (data[i + 1] & 0xFF) > 0x8F:
-                return False
-        
-        i += num_bytes
-    
-    return True
+            code_point = (code_point << 6) | (byte & 0x3F)
+            remaining_continuations -= 1
+
+            if remaining_continuations == 0:
+                # Check code point validity based on bytes_used
+                if bytes_used == 2:
+                    if not (0x80 <= code_point < 0x800):
+                        return False
+                elif bytes_used == 3:
+                    if not (0x800 <= code_point < 0x10000):
+                        return False
+                    if 0xD800 <= code_point <= 0xDFFF:
+                        return False
+                elif bytes_used == 4:
+                    if not (0x10000 <= code_point <= 0x10FFFF):
+                        return False
+                else:
+                    return False  # This should not happen
+
+    return remaining_continuations == 0
