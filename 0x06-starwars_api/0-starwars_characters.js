@@ -3,32 +3,51 @@
 const request = require('request');
 
 const movieId = process.argv[2];
+
 if (!movieId) {
-  console.error('Usage: ./0-starwars_characters.js <Movie_ID>');
+  console.error('Usage: node 0-starwars_characters.js <Movie ID>');
   process.exit(1);
 }
 
-const filmUrl = `https://swapi-api.alx-tools.com/api/films/${movieId}/`;
+const filmUrl = `https://swapi-api.hbtn.io/api/films/${movieId}/`;
 
-request(filmUrl, (error, response, body) => {
-  if (error) return console.error(error);
+request(filmUrl, function (error, response, body) {
+  if (error) {
+    console.error('Error:', error);
+    process.exit(1);
+  }
 
-  const film = JSON.parse(body);
-  const characters = film.characters;
+  if (response.statusCode !== 200) {
+    console.error(`Error: Received status code ${response.statusCode}`);
+    process.exit(1);
+  }
 
-  printCharactersInOrder(characters, 0);
-});
+  const filmData = JSON.parse(body);
+  const characters = filmData.characters;
+  const characterNames = new Array(characters.length);
+  let completedRequests = 0;
 
-function printCharactersInOrder(characters, index) {
-  if (index >= characters.length) return;
+  characters.forEach((characterUrl, index) => {
+    request(characterUrl, function (err, res, body) {
+      if (err) {
+        console.error('Error:', err);
+        process.exit(1);
+      }
 
-  request(characters[index], (err, res, body) => {
-    if (!err) {
-      const character = JSON.parse(body);
-      console.log(character.name);
-      printCharactersInOrder(characters, index + 1);
-    } else {
-      console.error(err);
-    }
+      if (res.statusCode !== 200) {
+        console.error(`Error: Received status code ${res.statusCode} for ${characterUrl}`);
+        process.exit(1);
+      }
+
+      const characterData = JSON.parse(body);
+      characterNames[index] = characterData.name;
+      completedRequests++;
+
+      if (completedRequests === characters.length) {
+        characterNames.forEach(name => {
+          console.log(name);
+        });
+      }
+    });
   });
-}
+});
